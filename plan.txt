@@ -1,0 +1,15 @@
+PCAP Analyzer: Implementation Plan (Pattern Detection Focus)This plan prioritizes moving the PCAP analyzer from a basic parser to a specialized tool capable of identifying the subtle network symptoms described by Dillon (low MSS, high retransmissions, timeouts leading to RSTs).I. Core Technology StackComponentTechnology/LibraryRoleFrontend UIReact (with Tailwind CSS)Provides a single-page, responsive, and professional interface.PCAP Parsingpcap-parser / pcap-ng-parser (JavaScript/WASM)Handles the low-level heavy lifting of reading raw binary PCAP data and structuring it into packets/frames.Protocol DecodingCustom Decoder (AdvancedPacketDecoder) or integrated tools like nsharkResponsible for decoding inner layers (TCP, IP, HTTP, etc.) to extract fields like MSS, sequence numbers, and flags.State & DataReact Hooks (useState, useReducer)Manages the uploaded file, the parsed packet array, and the generated symptom reports.PersistenceFirebase FirestoreStores user-uploaded files or, more preferably, the generated symptom reports and metadata for later review and sharing.II. Phase 1: Foundation & Data PreparationGoal: Establish a robust pipeline for file upload, authentication, and structured data storage.Firebase Setup & Auth:Initialize Firebase/Firestore/Auth using the provided __firebase_config and __initial_auth_token.Implement user sign-in (signInWithCustomToken or signInAnonymously) to satisfy security requirements for Firestore.File Upload & Initial Read:Create a clean file input component (<input type="file" />).Use the browser's FileReader to read the uploaded PCAP file into an ArrayBuffer.Basic Parsing Integration:Integrate the chosen PCAP parser (e.g., pcap-ng-parser).Pass the ArrayBuffer to the parser to generate an array of raw packets.Data Structuring for Analysis:Iterate through the raw packets and generate a streamlined data structure focusing on TCP connections.Structure: Create an array of Connection objects, where each object tracks all packets belonging to a unique 5-tuple (source IP, destination IP, source Port, destination Port, Protocol).// Example Connection Data Structure
+{
+  "id": "192.168.1.1:50000 -> 10.0.0.1:443",
+  "packets": [
+    // Simplified packet data for pattern analysis
+    {"time": 0.00, "flag": "SYN", "seq": 123, "ack": 0, "payload_len": 0, "mss": 1460},
+    {"time": 0.01, "flag": "SYN, ACK", "seq": 456, "ack": 124, "payload_len": 0, "mss": 1368},
+    // ...
+    {"time": 39.05, "flag": "RST", "seq": 999, "ack": 1000, "payload_len": 0}
+  ],
+  "metadata": {
+    "startTime": 0.00,
+    "endTime": 39.05
+  }
+}
