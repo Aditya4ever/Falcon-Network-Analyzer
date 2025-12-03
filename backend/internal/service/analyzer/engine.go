@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"pcap-analyzer/backend/internal/domain"
+	"pcap-analyzer/internal/domain"
 )
 
 // Engine runs the analysis algorithms on streams

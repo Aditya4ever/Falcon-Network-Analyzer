@@ -112,5 +112,28 @@ func extractMeta(packet gopacket.Packet) *PacketMeta {
 		meta.Flags = append(meta.Flags, "PSH")
 	}
 
+	// Attempt to extract Application Layer Info
+	if appLayer := packet.ApplicationLayer(); appLayer != nil {
+		// Basic HTTP detection (naive)
+		payload := appLayer.Payload()
+		if len(payload) > 0 {
+			// Check for HTTP methods
+			sPayload := string(payload)
+			if len(sPayload) > 4 {
+				if sPayload[:3] == "GET" || sPayload[:4] == "POST" || sPayload[:4] == "HTTP" {
+					meta.Protocol = "HTTP"
+				}
+			}
+		}
+	}
+
+	// TLS Extraction (using gopacket layers if available, or manual check)
+	// Note: gopacket/layers has TLS support but might need explicit decoding.
+	// For now, we'll do a simple check on the payload for Client Hello
+	if len(tcp.Payload) > 5 && tcp.Payload[0] == 0x16 && tcp.Payload[1] == 0x03 {
+		meta.Protocol = "TLS"
+		// TODO: Deep packet inspection for SNI would go here
+	}
+
 	return meta
 }

@@ -41,7 +41,7 @@ function App() {
                         <FileUpload onUploadComplete={setAnalysisId} />
                     </div>
                 ) : (
-                    <Dashboard analysisId={analysisId} />
+                    <Dashboard analysisId={analysisId} onReset={() => setAnalysisId(null)} />
                 )}
             </main>
         </div>

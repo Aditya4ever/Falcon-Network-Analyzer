@@ -5,13 +5,15 @@ import (
 	"log"
 	"net/http"
 
-	"pcap-analyzer/backend/internal/handler"
+	"pcap-analyzer/internal/handler"
+	"pcap-analyzer/internal/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	r := gin.Default()
+	r.Use(middleware.CORSMiddleware())
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

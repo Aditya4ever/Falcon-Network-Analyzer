@@ -8,12 +8,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"pcap-analyzer/backend/internal/service/analyzer"
-	"pcap-analyzer/backend/internal/service/pcap"
+	"pcap-analyzer/internal/service/analyzer"
+	"pcap-analyzer/internal/service/pcap"
+	"sync"
 )
 
 // In-memory store for demo purposes (replace with Postgres later)
-var analysisStore = make(map[string]interface{})
+var (
+	analysisStore = make(map[string]interface{})
+	storeMutex    sync.RWMutex
+)
 
 func UploadHandler(c *gin.Context) {
 	file, err := c.FormFile("file")
@@ -33,6 +37,11 @@ func UploadHandler(c *gin.Context) {
 		return
 	}
 
+	// Initialize state synchronously
+	storeMutex.Lock()
+	analysisStore[id] = gin.H{"status": "processing"}
+	storeMutex.Unlock()
+
 	// Trigger Analysis (Async in production, Sync for now)
 	go func() {
 		runAnalysis(id, filePath)
@@ -47,7 +56,11 @@ func UploadHandler(c *gin.Context) {
 
 func AnalysisResultHandler(c *gin.Context) {
 	id := c.Param("id")
+
+	storeMutex.RLock()
 	result, exists := analysisStore[id]
+	storeMutex.RUnlock()
+
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Analysis not found"})
 		return
@@ -60,7 +73,9 @@ func runAnalysis(id, filePath string) {
 	parser := pcap.NewStreamingParser(filePath)
 	packetChan, err := parser.Parse()
 	if err != nil {
+		storeMutex.Lock()
 		analysisStore[id] = gin.H{"status": "failed", "error": err.Error()}
+		storeMutex.Unlock()
 		return
 	}
 
@@ -83,6 +98,7 @@ func runAnalysis(id, filePath string) {
 	}
 
 	// Store result
+	storeMutex.Lock()
 	analysisStore[id] = gin.H{
 		"status": "complete",
 		"summary": gin.H{
@@ -91,4 +107,5 @@ func runAnalysis(id, filePath string) {
 		},
 		"streams": streams,
 	}
+	storeMutex.Unlock()
 }

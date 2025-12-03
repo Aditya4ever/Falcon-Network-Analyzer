@@ -3,8 +3,8 @@ package analyzer
 import (
 	"sync"
 
-	"pcap-analyzer/backend/internal/domain"
-	"pcap-analyzer/backend/internal/service/pcap"
+	"pcap-analyzer/internal/domain"
+	"pcap-analyzer/internal/service/pcap"
 )
 
 // StreamBuilder handles the reconstruction of streams from packets
@@ -42,6 +42,11 @@ func (sb *StreamBuilder) ProcessPacket(pkt pcap.PacketMeta) {
 			Severity: "normal",
 		}
 		sb.streams[streamID] = stream
+	}
+
+	// Update Protocol if we detect a more specific one (e.g., TCP -> TLS)
+	if stream.Protocol == "TCP" && pkt.Protocol != "TCP" {
+		stream.Protocol = pkt.Protocol
 	}
 
 	// Update Stats

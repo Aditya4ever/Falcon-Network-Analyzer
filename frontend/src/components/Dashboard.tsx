@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { AlertTriangle, CheckCircle, Clock, Activity } from 'lucide-react';
+import { StreamList } from './StreamList';
 
 interface DashboardProps {
     analysisId: string;
+    onReset: () => void;
 }
 
 interface Stream {
@@ -31,9 +33,10 @@ interface AnalysisResult {
     streams: Stream[];
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ analysisId }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => {
     const [data, setData] = useState<AnalysisResult | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const pollAnalysis = async () => {
@@ -46,8 +49,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId }) => {
                     // Poll again in 1s
                     setTimeout(pollAnalysis, 1000);
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error(err);
+                // If 404, it means analysis is gone. If Network Error, backend might be down.
+                const msg = err.response?.status === 404
+                    ? "Analysis not found (Backend might have restarted)"
+                    : (err.message || "Failed to load analysis");
+                setError(msg);
                 setLoading(false);
             }
         };
@@ -63,7 +71,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId }) => {
         );
     }
 
-    if (!data) return <div>Failed to load analysis</div>;
+    if (error) {
+        return (
+            <div className="p-8 text-center">
+                <div className="text-red-400 text-lg mb-4">{error}</div>
+                <button
+                    onClick={onReset}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-white transition-colors"
+                >
+                    Start New Analysis
+                </button>
+            </div>
+        );
+    }
+
+    if (!data) return <div>Loading...</div>;
 
     const criticalStreams = data.streams.filter(s => s.severity === 'critical');
     const warningStreams = data.streams.filter(s => s.severity === 'warning');
@@ -90,22 +112,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId }) => {
                 />
             </div>
 
+
+
             {/* Issues List */}
             <div className="space-y-4">
-                <h2 className="text-xl font-semibold text-slate-100">Detected Issues</h2>
-                {criticalStreams.length === 0 && warningStreams.length === 0 && (
-                    <div className="p-8 text-center bg-slate-800/50 rounded-xl border border-slate-700">
-                        <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                        <p className="text-slate-300">No significant issues detected.</p>
-                    </div>
-                )}
-
-                {criticalStreams.map(stream => (
-                    <StreamCard key={stream.id} stream={stream} />
-                ))}
-                {warningStreams.map(stream => (
-                    <StreamCard key={stream.id} stream={stream} />
-                ))}
+                <h2 className="text-xl font-semibold text-slate-100">Traffic Streams</h2>
+                <StreamList streams={data.streams} />
             </div>
         </div>
     );
