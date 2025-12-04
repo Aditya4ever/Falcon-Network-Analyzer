@@ -3,9 +3,11 @@ import { ChevronDown, ChevronRight, AlertCircle, Shield, Globe, Activity } from 
 
 interface StreamListProps {
     streams: any[];
+    onInspectStream: (id: string) => void;
+    onViewLadder: (stream: any) => void;
 }
 
-export const StreamList: React.FC<StreamListProps> = ({ streams }) => {
+export const StreamList: React.FC<StreamListProps> = ({ streams, onInspectStream, onViewLadder }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     const toggleExpand = (id: string) => {
@@ -70,6 +72,29 @@ export const StreamList: React.FC<StreamListProps> = ({ streams }) => {
                                         ))}
                                     </div>
                                 )}
+
+                                <div className="mt-4 flex justify-end">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onViewLadder(stream);
+                                        }}
+                                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded transition-colors flex items-center gap-2 mr-2"
+                                    >
+                                        <Activity className="w-4 h-4" />
+                                        Time Sequence
+                                    </button>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onInspectStream(stream.id);
+                                        }}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded transition-colors flex items-center gap-2"
+                                    >
+                                        <Shield className="w-4 h-4" />
+                                        Inspect Packets
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>

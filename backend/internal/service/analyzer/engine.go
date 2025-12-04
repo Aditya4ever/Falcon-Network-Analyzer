@@ -18,7 +18,17 @@ func NewEngine() *Engine {
 func (e *Engine) AnalyzeStream(stream *domain.Stream) {
 	e.detectRetransmissions(stream)
 	e.detectResetsAndTimouts(stream)
+	e.detectLowMSS(stream)
 	e.detectDillonsSymptoms(stream)
+}
+
+func (e *Engine) detectLowMSS(stream *domain.Stream) {
+	if (stream.ClientMSS > 0 && stream.ClientMSS < 1260) || (stream.ServerMSS > 0 && stream.ServerMSS < 1260) {
+		stream.Analysis = append(stream.Analysis, fmt.Sprintf("Low MSS Detected (Client: %d, Server: %d)", stream.ClientMSS, stream.ServerMSS))
+		if stream.Severity != domain.SeverityCritical {
+			stream.Severity = domain.SeverityWarning
+		}
+	}
 }
 
 func (e *Engine) detectRetransmissions(stream *domain.Stream) {
@@ -41,7 +51,9 @@ func (e *Engine) detectRetransmissions(stream *domain.Stream) {
 		rate := float64(retransCount) / float64(stream.Stats.PacketCount) * 100
 		if rate > 5.0 {
 			stream.Analysis = append(stream.Analysis, fmt.Sprintf("High Retransmission Rate: %.2f%%", rate))
-			stream.Severity = "warning"
+			if stream.Severity != domain.SeverityCritical {
+				stream.Severity = domain.SeverityWarning
+			}
 		}
 	}
 }
@@ -63,7 +75,7 @@ func (e *Engine) detectResetsAndTimouts(stream *domain.Stream) {
 					if gap > 9*time.Second && gap < 11*time.Second {
 						stream.Analysis = append(stream.Analysis, fmt.Sprintf("Timeout Pattern: RST after %.2fs gap", gap.Seconds()))
 						hasTimeout = true
-						stream.Severity = "critical"
+						stream.Severity = domain.SeverityCritical
 					}
 				}
 			}
@@ -77,11 +89,10 @@ func (e *Engine) detectResetsAndTimouts(stream *domain.Stream) {
 
 func (e *Engine) detectDillonsSymptoms(stream *domain.Stream) {
 	// "Dillon's Symptoms": Low MSS + High Retrans + Timeout
-	// Note: MSS is not yet extracted in parser, assuming we add it later.
-	// For now, check Retrans + Timeout
+	isLowMSS := (stream.ClientMSS > 0 && stream.ClientMSS < 1260) || (stream.ServerMSS > 0 && stream.ServerMSS < 1260)
 
-	if stream.Stats.RetransmissionCount > 10 && stream.Stats.HasTimeout {
-		stream.Analysis = append(stream.Analysis, "MATCH: Dillon's Symptoms (High Retrans + Timeout)")
-		stream.Severity = "critical"
+	if isLowMSS && stream.Stats.RetransmissionCount > 5 && stream.Stats.HasTimeout {
+		stream.Analysis = append(stream.Analysis, "MATCH: Dillon's Symptoms (Low MSS + Retrans + Timeout)")
+		stream.Severity = domain.SeverityCritical
 	}
 }

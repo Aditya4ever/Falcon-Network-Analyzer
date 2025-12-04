@@ -37,7 +37,6 @@ func (sb *StreamBuilder) ProcessPacket(pkt pcap.PacketMeta) {
 			Protocol:   pkt.Protocol,
 			Stats: domain.StreamStats{
 				StartTime: pkt.Timestamp,
-				MinMSS:    9999, // Init high
 			},
 			Severity: "normal",
 		}
@@ -49,6 +48,15 @@ func (sb *StreamBuilder) ProcessPacket(pkt pcap.PacketMeta) {
 		stream.Protocol = pkt.Protocol
 	}
 
+	// Capture MSS
+	if pkt.MSS > 0 {
+		if pkt.SrcIP == stream.ClientIP {
+			stream.ClientMSS = pkt.MSS
+		} else {
+			stream.ServerMSS = pkt.MSS
+		}
+	}
+
 	// Update Stats
 	stream.Stats.PacketCount++
 	stream.Stats.EndTime = pkt.Timestamp
@@ -57,10 +65,13 @@ func (sb *StreamBuilder) ProcessPacket(pkt pcap.PacketMeta) {
 	// Convert pcap.PacketMeta to domain.PacketMeta (lighter weight)
 	dPkt := &domain.PacketMeta{
 		Timestamp:  pkt.Timestamp,
+		SrcIP:      pkt.SrcIP,
+		DstIP:      pkt.DstIP,
 		Seq:        pkt.Seq,
 		Ack:        pkt.Ack,
 		Flags:      pkt.Flags,
 		PayloadLen: pkt.PayloadLen,
+		Payload:    pkt.Payload,
 	}
 	stream.Packets = append(stream.Packets, dPkt)
 }

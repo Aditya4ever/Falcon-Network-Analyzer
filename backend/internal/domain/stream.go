@@ -5,19 +5,30 @@ import (
 	"time"
 )
 
+type Severity string
+
+const (
+	SeverityNormal   Severity = "normal"
+	SeverityWarning  Severity = "warning"
+	SeverityCritical Severity = "critical"
+)
+
 // Stream represents a reconstructed TCP connection
 type Stream struct {
-	ID         string `json:"id"`
-	ClientIP   string `json:"client_ip"`
-	ServerIP   string `json:"server_ip"`
-	ClientPort uint16 `json:"client_port"`
-	ServerPort uint16 `json:"server_port"`
-	Protocol   string `json:"protocol"`
+	ID         string   `json:"id"`
+	ClientIP   string   `json:"client_ip"`
+	ServerIP   string   `json:"server_ip"`
+	ClientPort uint16   `json:"client_port"`
+	ServerPort uint16   `json:"server_port"`
+	Protocol   string   `json:"protocol"`
+	Severity   Severity `json:"severity"`
 
-	Packets  []*PacketMeta `json:"packets,omitempty"` // Pointer to avoid copying
+	ClientMSS uint16 `json:"client_mss"`
+	ServerMSS uint16 `json:"server_mss"`
+
+	Packets  []*PacketMeta `json:"packets,omitempty"`
 	Stats    StreamStats   `json:"stats"`
 	Analysis []string      `json:"analysis"`
-	Severity string        `json:"severity"` // "critical", "warning", "info"
 }
 
 // StreamStats holds aggregate metrics
@@ -29,23 +40,21 @@ type StreamStats struct {
 	RetransmissionCount int           `json:"retransmission_count"`
 	ResetCount          int           `json:"reset_count"`
 	HasTimeout          bool          `json:"has_timeout"`
-	MinMSS              int           `json:"min_mss"`
 }
 
-// PacketMeta (redefined here to avoid circular imports if needed,
-// or we can move the one from pcap package here. For now, let's assume
-// we import it or define a shared one. I'll define a clean one for domain usage)
 type PacketMeta struct {
 	Timestamp  time.Time
+	SrcIP      string
+	DstIP      string
 	Seq        uint32
 	Ack        uint32
 	Flags      []string
 	PayloadLen int
+	Payload    []byte
 	IsRetrans  bool
 }
 
 // GenerateStreamID creates a consistent ID for the 5-tuple
-// Sorts IP/Port pairs to ensure A->B and B->A map to same stream
 func GenerateStreamID(srcIP, dstIP string, srcPort, dstPort uint16) string {
 	if srcIP < dstIP {
 		return fmt.Sprintf("%s:%d-%s:%d", srcIP, srcPort, dstIP, dstPort)

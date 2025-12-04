@@ -50,20 +50,6 @@ graph TD
 Instead of loading a 500MB PCAP into memory, we will stream it:
 *   **Reader**: The `pcap.OpenOffline` handle reads the file block-by-block.
 *   **Pipeline**: Packets are pushed to a buffered channel (`chan gopacket.Packet`).
-*   **Memory Footprint**: Constant memory usage regardless of file size (e.g., ~100MB RAM for a 2GB file).
-
-### 2. Concurrent Stream Processing
-*   **Sharding**: We use a "Stream Dispatcher" that hashes the 5-tuple (SrcIP, DstIP, SrcPort, DstPort, Proto) to assign packets to specific worker goroutines.
-*   **Lock-Free Design**: Since all packets for "Connection A" always go to "Worker 1", we avoid complex mutex locking for stream state reassembly.
-
-### 3. Database Optimization
-*   **Write Batching**: Analysis results are batched (e.g., every 1000 streams) before bulk-inserting into PostgreSQL to reduce I/O overhead.
-*   **JSONB**: Complex, variable packet metadata is stored in `JSONB` columns for flexibility.
-
----
-
-## 📅 Implementation Phases
-
 ### Phase 1: The "Engine" (Backend Foundation)
 **Goal**: Parse a PCAP and output JSON analysis to console.
 1.  **Init**: Setup Go module, Docker Compose (Postgres + Redis).
@@ -88,9 +74,11 @@ Instead of loading a 500MB PCAP into memory, we will stream it:
 4.  **Detail View**: The "Ladder Diagram" (Sequence Diagram) using SVG/Canvas.
 
 ### Phase 4: Advanced Visuals & Polish
-1.  **Ladder Diagram**: Replicate Wireshark's flow graph (Time on Y-axis, Hosts on X-axis).
-2.  **Filtering**: "Show only streams with Retransmissions > 5%".
-3.  **Reporting**: Export to PDF/JSON.
+1.  **Network Topology**: Use **React Flow** to visualize connections between IPs.
+2.  **Packet Drill-down**: Use **react-hex-editor** to display raw packet payloads in a hex/ASCII format.
+3.  **Timeline View**: Implement a "Ladder Diagram" using **Recharts** or custom SVG.
+4.  **Advanced Protocol Detection**: Integrate **go-dpi** for deep packet inspection on the backend.
+5.  **Reporting**: Export to PDF/JSON.
 
 ---
 

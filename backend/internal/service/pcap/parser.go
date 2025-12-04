@@ -1,6 +1,7 @@
 package pcap
 
 import (
+	"encoding/binary"
 	"fmt"
 	"time"
 
@@ -23,6 +24,8 @@ type PacketMeta struct {
 	Ack        uint32
 	Window     uint16
 	PayloadLen int
+	Payload    []byte
+	MSS        uint16
 }
 
 // StreamingParser handles PCAP parsing
@@ -95,6 +98,16 @@ func extractMeta(packet gopacket.Packet) *PacketMeta {
 		PayloadLen: len(tcp.Payload),
 	}
 
+	// Copy Payload (Limit to 2KB to save RAM/DB)
+	if len(tcp.Payload) > 0 {
+		limit := 2048
+		if len(tcp.Payload) < limit {
+			limit = len(tcp.Payload)
+		}
+		meta.Payload = make([]byte, limit)
+		copy(meta.Payload, tcp.Payload[:limit])
+	}
+
 	// Extract flags
 	if tcp.SYN {
 		meta.Flags = append(meta.Flags, "SYN")
@@ -110,6 +123,13 @@ func extractMeta(packet gopacket.Packet) *PacketMeta {
 	}
 	if tcp.PSH {
 		meta.Flags = append(meta.Flags, "PSH")
+	}
+
+	// Extract MSS
+	for _, opt := range tcp.Options {
+		if opt.OptionType == layers.TCPOptionKindMSS && len(opt.OptionData) == 2 {
+			meta.MSS = binary.BigEndian.Uint16(opt.OptionData)
+		}
 	}
 
 	// Attempt to extract Application Layer Info

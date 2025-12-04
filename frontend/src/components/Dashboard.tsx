@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { AlertTriangle, CheckCircle, Clock, Activity } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Activity, Network } from 'lucide-react';
 import { StreamList } from './StreamList';
+import TopologyMap from './TopologyMap';
+import { PacketViewer } from './PacketViewer';
+import { LadderDiagram } from './LadderDiagram';
 
 interface DashboardProps {
     analysisId: string;
@@ -37,6 +40,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
     const [data, setData] = useState<AnalysisResult | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Filter State
+    const [filterSource, setFilterSource] = useState('');
+    const [filterDest, setFilterDest] = useState('');
+    const [filterProtocol, setFilterProtocol] = useState('');
+    const [viewingStreamId, setViewingStreamId] = useState<string | null>(null);
+    const [ladderStream, setLadderStream] = useState<Stream | null>(null);
 
     useEffect(() => {
         const pollAnalysis = async () => {
@@ -87,8 +97,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
 
     if (!data) return <div>Loading...</div>;
 
-    const criticalStreams = data.streams.filter(s => s.severity === 'critical');
-    const warningStreams = data.streams.filter(s => s.severity === 'warning');
+    // Filtering Logic
+    const filteredStreams = (data.streams || []).filter(stream => {
+        const matchSource = stream.client_ip.includes(filterSource);
+        const matchDest = stream.server_ip.includes(filterDest);
+        const matchProto = stream.protocol.toLowerCase().includes(filterProtocol.toLowerCase());
+        return matchSource && matchDest && matchProto;
+    });
+
+    // Limit to 50 unless searching
+    const displayStreams = (filterSource || filterDest || filterProtocol)
+        ? filteredStreams
+        : filteredStreams.slice(0, 50);
+
+    const criticalCount = data.streams.filter(s => s.severity === 'critical').length;
+    const warningCount = data.streams.filter(s => s.severity === 'warning').length;
 
     return (
         <div className="max-w-6xl mx-auto p-6 space-y-8">
@@ -101,24 +124,85 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
                 />
                 <Card
                     title="Critical Issues"
-                    value={criticalStreams.length}
+                    value={criticalCount}
                     icon={<AlertTriangle className="text-red-400" />}
                     className="border-red-500/20 bg-red-500/5"
                 />
                 <Card
                     title="Warnings"
-                    value={warningStreams.length}
+                    value={warningCount}
                     icon={<Clock className="text-yellow-400" />}
                 />
             </div>
 
+            {/* Topology Map */}
+            {filteredStreams.length > 0 && (
+                <div className="mb-8">
+                    <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                        <Network className="w-5 h-5 text-purple-400" />
+                        Network Topology
+                    </h2>
+                    <TopologyMap streams={filteredStreams} onInspectStream={setViewingStreamId} />
+                </div>
+            )}
 
-
-            {/* Issues List */}
-            <div className="space-y-4">
-                <h2 className="text-xl font-semibold text-slate-100">Traffic Streams</h2>
-                <StreamList streams={data.streams} />
+            {/* Filters */}
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 flex gap-4">
+                <input
+                    type="text"
+                    placeholder="Filter Source IP"
+                    className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white w-full"
+                    value={filterSource}
+                    onChange={e => setFilterSource(e.target.value)}
+                />
+                <input
+                    type="text"
+                    placeholder="Filter Dest IP"
+                    className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white w-full"
+                    value={filterDest}
+                    onChange={e => setFilterDest(e.target.value)}
+                />
+                <input
+                    type="text"
+                    placeholder="Filter Protocol"
+                    className="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white w-full"
+                    value={filterProtocol}
+                    onChange={e => setFilterProtocol(e.target.value)}
+                />
             </div>
+
+            {/* Stream List */}
+            <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-semibold text-slate-100">Traffic Streams</h2>
+                    <span className="text-sm text-slate-400">
+                        Showing {displayStreams.length} of {filteredStreams.length} streams
+                    </span>
+                </div>
+                <StreamList
+                    streams={displayStreams}
+                    onInspectStream={setViewingStreamId}
+                    onViewLadder={setLadderStream}
+                />
+            </div>
+
+            {/* Packet Viewer Modal */}
+            {viewingStreamId && (
+                <PacketViewer
+                    streamId={viewingStreamId}
+                    onClose={() => setViewingStreamId(null)}
+                />
+            )}
+
+            {/* Ladder Diagram Modal */}
+            {ladderStream && (
+                <LadderDiagram
+                    streamId={ladderStream.id}
+                    clientIp={ladderStream.client_ip}
+                    serverIp={ladderStream.server_ip}
+                    onClose={() => setLadderStream(null)}
+                />
+            )}
         </div>
     );
 };
@@ -130,40 +214,5 @@ const Card = ({ title, value, icon, className = "" }: any) => (
             {icon}
         </div>
         <div className="text-3xl font-bold text-slate-100">{value}</div>
-    </div>
-);
-
-const StreamCard = ({ stream }: { stream: Stream }) => (
-    <div className={`
-    p-4 rounded-lg border 
-    ${stream.severity === 'critical' ? 'bg-red-500/5 border-red-500/20' : 'bg-yellow-500/5 border-yellow-500/20'}
-  `}>
-        <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-                <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${stream.severity === 'critical' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
-                    }`}>
-                    {stream.severity}
-                </span>
-                <span className="font-mono text-slate-300">
-                    {stream.client_ip} → {stream.server_ip}:{stream.server_port}
-                </span>
-            </div>
-            <span className="text-xs text-slate-500">{stream.protocol}</span>
-        </div>
-
-        <div className="space-y-1 mt-3">
-            {stream.analysis.map((issue, idx) => (
-                <div key={idx} className="flex items-start gap-2 text-sm text-slate-300">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-current opacity-60" />
-                    {issue}
-                </div>
-            ))}
-        </div>
-
-        <div className="mt-4 flex gap-6 text-xs text-slate-500 font-mono border-t border-slate-700/50 pt-3">
-            <span>Pkts: {stream.stats.packet_count}</span>
-            <span>Retrans: {stream.stats.retransmission_count}</span>
-            <span>RSTs: {stream.stats.reset_count}</span>
-        </div>
     </div>
 );

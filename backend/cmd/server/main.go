@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"pcap-analyzer/internal/db"
 	"pcap-analyzer/internal/handler"
 	"pcap-analyzer/internal/middleware"
 
@@ -12,6 +13,9 @@ import (
 )
 
 func main() {
+	// Initialize Database
+	db.InitDB()
+
 	r := gin.Default()
 	r.Use(middleware.CORSMiddleware())
 
@@ -25,6 +29,7 @@ func main() {
 	// API Routes
 	r.POST("/api/upload", handler.UploadHandler)
 	r.GET("/api/analysis/:id", handler.AnalysisResultHandler)
+	r.GET("/api/stream/:id/packets", handler.GetStreamPacketsHandler)
 
 	fmt.Println("Server starting on :8080...")
 	if err := r.Run(":8080"); err != nil {
