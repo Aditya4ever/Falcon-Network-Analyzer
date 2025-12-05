@@ -11,6 +11,7 @@ export const StreamList: React.FC<StreamListProps> = ({ streams, onInspectStream
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     const toggleExpand = (id: string) => {
+        console.log("Toggling expand for stream:", id);
         setExpandedId(expandedId === id ? null : id);
     };
 
@@ -56,20 +57,27 @@ export const StreamList: React.FC<StreamListProps> = ({ streams, onInspectStream
                         {expandedId === stream.id && (
                             <div className="bg-slate-900/50 p-4 pl-16 border-t border-slate-700/50">
                                 <div className="grid grid-cols-3 gap-6 mb-4">
-                                    <Stat label="Packets" value={stream.stats.packet_count} />
-                                    <Stat label="Retransmissions" value={stream.stats.retransmission_count} />
-                                    <Stat label="Resets" value={stream.stats.reset_count} />
+                                    <Stat label="Packets" value={stream.packet_count} />
+                                    <Stat label="Retransmissions" value={stream.retransmission_count} />
+                                    <Stat label="Resets" value={stream.reset_count} />
                                 </div>
 
-                                {stream.analysis && stream.analysis.length > 0 && (
+                                {stream.analysis_issues && (
                                     <div className="space-y-2">
                                         <h4 className="text-xs font-semibold uppercase text-slate-500 tracking-wider">Analysis Findings</h4>
-                                        {stream.analysis.map((issue: string, idx: number) => (
-                                            <div key={idx} className="flex items-center gap-2 text-sm text-red-300 bg-red-500/10 p-2 rounded">
-                                                <AlertCircle className="w-4 h-4" />
-                                                {issue}
-                                            </div>
-                                        ))}
+                                        {(() => {
+                                            try {
+                                                const issues = JSON.parse(stream.analysis_issues);
+                                                return Array.isArray(issues) ? issues.map((issue: string, idx: number) => (
+                                                    <div key={idx} className="flex items-center gap-2 text-sm text-red-300 bg-red-500/10 p-2 rounded">
+                                                        <AlertCircle className="w-4 h-4" />
+                                                        {issue}
+                                                    </div>
+                                                )) : null;
+                                            } catch (e) {
+                                                return null;
+                                            }
+                                        })()}
                                     </div>
                                 )}
 
@@ -87,6 +95,7 @@ export const StreamList: React.FC<StreamListProps> = ({ streams, onInspectStream
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
+                                            console.log("StreamList: Clicked Inspect for", stream.id);
                                             onInspectStream(stream.id);
                                         }}
                                         className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded transition-colors flex items-center gap-2"

@@ -52,6 +52,7 @@ type PacketMeta struct {
 	PayloadLen int
 	Payload    []byte
 	IsRetrans  bool
+	Window     uint16
 }
 
 // GenerateStreamID creates a consistent ID for the 5-tuple

@@ -9,23 +9,35 @@ interface Packet {
     ack: number;
     flags: string;
     payload_len: number;
+    window_size: number;
     payload: string; // Base64 encoded by default in JSON? No, usually raw bytes need handling. Axios might return base64 string for []byte.
+}
+
+interface StreamSummary {
+    id: string;
+    client_ip: string;
+    server_ip: string;
+    protocol: string;
+    analysis: string[];
 }
 
 interface PacketViewerProps {
     streamId: string;
+    stream?: any; // Pass full stream object for context
     onClose: () => void;
 }
 
-export const PacketViewer: React.FC<PacketViewerProps> = ({ streamId, onClose }) => {
+export const PacketViewer: React.FC<PacketViewerProps> = ({ streamId, stream, onClose }) => {
     const [packets, setPackets] = useState<Packet[]>([]);
     const [selectedPacket, setSelectedPacket] = useState<Packet | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        console.log("PacketViewer mounted for stream:", streamId);
         const fetchPackets = async () => {
             try {
                 const res = await axios.get(`/api/stream/${streamId}/packets`);
+                console.log("PacketViewer: fetched packets:", res.data.length);
                 setPackets(res.data);
                 if (res.data.length > 0) {
                     setSelectedPacket(res.data[0]);
@@ -75,7 +87,10 @@ export const PacketViewer: React.FC<PacketViewerProps> = ({ streamId, onClose })
                 {/* Header */}
                 <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50 rounded-t-xl">
                     <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                        Packet Inspector <span className="text-slate-500 text-sm font-normal">Stream {streamId}</span>
+                        Packet Inspector
+                        <span className="text-slate-500 text-sm font-normal">
+                            {stream ? `${stream.client_ip} → ${stream.server_ip} (${stream.protocol})` : `Stream ${streamId}`}
+                        </span>
                     </h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-white">
                         <X className="w-6 h-6" />
@@ -89,8 +104,9 @@ export const PacketViewer: React.FC<PacketViewerProps> = ({ streamId, onClose })
                             <thead className="bg-slate-800 text-slate-400 sticky top-0">
                                 <tr>
                                     <th className="p-3 font-medium">#</th>
-                                    <th className="p-3 font-medium">Time</th>
+                                    <th className="p-3 font-medium">Time (Δ)</th>
                                     <th className="p-3 font-medium">Flags</th>
+                                    <th className="p-3 font-medium">Win</th>
                                     <th className="p-3 font-medium">Len</th>
                                 </tr>
                             </thead>
@@ -104,12 +120,22 @@ export const PacketViewer: React.FC<PacketViewerProps> = ({ streamId, onClose })
                                         className={`cursor-pointer hover:bg-slate-800 transition-colors ${selectedPacket?.id === pkt.id ? 'bg-blue-900/30 border-l-2 border-blue-500' : ''}`}
                                     >
                                         <td className="p-3 text-slate-500">{idx + 1}</td>
-                                        <td className="p-3 text-slate-300">{new Date(pkt.timestamp).toLocaleTimeString()}</td>
+                                        <td className="p-3 text-slate-300">
+                                            {new Date(pkt.timestamp).toLocaleTimeString()}
+                                            <span className="block text-xs text-slate-500">
+                                                {idx > 0 ? `+${(new Date(pkt.timestamp).getTime() - new Date(packets[idx - 1].timestamp).getTime())}ms` : '0ms'}
+                                            </span>
+                                        </td>
                                         <td className="p-3">
-                                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${pkt.flags.includes('RST') ? 'bg-red-900/30 text-red-300 border-red-800' :
+                                                pkt.flags.includes('SYN') ? 'bg-green-900/30 text-green-300 border-green-800' :
+                                                    pkt.flags.includes('FIN') ? 'bg-yellow-900/30 text-yellow-300 border-yellow-800' :
+                                                        'bg-slate-800 text-slate-300 border-slate-700'
+                                                }`}>
                                                 {pkt.flags || "DATA"}
                                             </span>
                                         </td>
+                                        <td className="p-3 text-slate-400 font-mono">{pkt.window_size}</td>
                                         <td className="p-3 text-slate-400">{pkt.payload_len}</td>
                                     </tr>
                                 ))}
@@ -134,6 +160,10 @@ export const PacketViewer: React.FC<PacketViewerProps> = ({ streamId, onClose })
                                         <div>
                                             <span className="text-slate-500 block text-xs uppercase tracking-wider">Payload Size</span>
                                             <span className="text-white font-mono">{selectedPacket.payload_len} bytes</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500 block text-xs uppercase tracking-wider">Window</span>
+                                            <span className="text-white font-mono">{selectedPacket.window_size}</span>
                                         </div>
                                     </div>
                                 </div>

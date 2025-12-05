@@ -14,7 +14,8 @@ type Analysis struct {
 }
 
 type Stream struct {
-	ID                  string   `gorm:"primaryKey" json:"id"`
+	ID                  string   `gorm:"primaryKey" json:"id"`     // UUID
+	StreamHash          string   `gorm:"index" json:"stream_hash"` // 5-tuple hash
 	AnalysisID          string   `gorm:"index" json:"analysis_id"`
 	ClientIP            string   `json:"client_ip"`
 	ServerIP            string   `json:"server_ip"`
@@ -41,5 +42,6 @@ type Packet struct {
 	Ack        uint32    `json:"ack"`
 	Flags      string    `json:"flags"` // Comma-separated
 	PayloadLen int       `json:"payload_len"`
+	WindowSize int       `json:"window_size"`
 	Payload    []byte    `json:"payload"` // Raw bytes
 }

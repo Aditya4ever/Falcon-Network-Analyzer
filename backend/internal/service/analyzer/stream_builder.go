@@ -72,6 +72,7 @@ func (sb *StreamBuilder) ProcessPacket(pkt pcap.PacketMeta) {
 		Flags:      pkt.Flags,
 		PayloadLen: pkt.PayloadLen,
 		Payload:    pkt.Payload,
+		Window:     pkt.Window,
 	}
 	stream.Packets = append(stream.Packets, dPkt)
 }

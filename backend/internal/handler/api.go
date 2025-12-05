@@ -63,9 +63,12 @@ func AnalysisResultHandler(c *gin.Context) {
 
 	// Fetch from DB with Streams
 	if err := db.DB.Preload("Streams").First(&analysis, "id = ?", id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Analysis not found"})
+		println("AnalysisResultHandler Error:", err.Error()) // Log the actual error
+		c.JSON(http.StatusNotFound, gin.H{"error": "Analysis not found", "details": err.Error()})
 		return
 	}
+
+	// DEBUG LOG
 
 	// Parse Summary JSON for response
 	var summaryMap map[string]interface{}
@@ -132,9 +135,11 @@ func runAnalysis(id, filePath string) {
 
 		// Convert Domain Stream to Model Stream
 		issuesJSON, _ := json.Marshal(ds.Analysis)
+		streamUUID := uuid.New().String()
 
 		ms := model.Stream{
-			ID:                  ds.ID,
+			ID:                  streamUUID,
+			StreamHash:          ds.ID,
 			AnalysisID:          id,
 			ClientIP:            ds.ClientIP,
 			ServerIP:            ds.ServerIP,
@@ -162,7 +167,7 @@ func runAnalysis(id, filePath string) {
 			}
 
 			mp := model.Packet{
-				StreamID:   ds.ID,
+				StreamID:   streamUUID,
 				Timestamp:  pkt.Timestamp,
 				SrcIP:      pkt.SrcIP,
 				DstIP:      pkt.DstIP,
@@ -170,6 +175,7 @@ func runAnalysis(id, filePath string) {
 				Ack:        pkt.Ack,
 				Flags:      flags,
 				PayloadLen: pkt.PayloadLen,
+				WindowSize: int(pkt.Window),
 				Payload:    pkt.Payload,
 			}
 			ms.Packets = append(ms.Packets, mp)
@@ -180,7 +186,14 @@ func runAnalysis(id, filePath string) {
 
 	// Batch Insert Streams
 	if len(modelStreams) > 0 {
-		db.DB.CreateInBatches(modelStreams, 100)
+		if err := db.DB.CreateInBatches(modelStreams, 100).Error; err != nil {
+			// If insert fails, mark analysis as failed
+			db.DB.Model(&model.Analysis{}).Where("id = ?", id).Updates(model.Analysis{
+				Status: "failed",
+				Error:  "Failed to save streams: " + err.Error(),
+			})
+			return
+		}
 	}
 
 	// Update Analysis Status

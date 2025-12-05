@@ -20,6 +20,50 @@ func (e *Engine) AnalyzeStream(stream *domain.Stream) {
 	e.detectResetsAndTimouts(stream)
 	e.detectLowMSS(stream)
 	e.detectDillonsSymptoms(stream)
+	e.detectApplicationLayer(stream)
+}
+
+func (e *Engine) detectApplicationLayer(stream *domain.Stream) {
+	// If already detected as something specific (not just TCP/UDP), skip
+	if stream.Protocol != "TCP" && stream.Protocol != "UDP" {
+		return
+	}
+
+	for _, pkt := range stream.Packets {
+		if len(pkt.Payload) == 0 {
+			continue
+		}
+
+		payload := pkt.Payload
+
+		// 1. TLS Client Hello (Content Type 22, Version 0x03xx, Handshake Type 1)
+		if len(payload) > 5 && payload[0] == 0x16 && payload[1] == 0x03 && payload[5] == 0x01 {
+			stream.Protocol = "TLS"
+			return
+		}
+
+		// 2. HTTP Methods
+		if len(payload) > 4 {
+			prefix := string(payload[:4])
+			if prefix == "GET " || prefix == "POST" || prefix == "HEAD" || prefix == "PUT " || prefix == "HTTP" {
+				stream.Protocol = "HTTP"
+				return
+			}
+		}
+
+		// 3. SSH
+		if len(payload) > 4 && string(payload[:4]) == "SSH-" {
+			stream.Protocol = "SSH"
+			return
+		}
+
+		// 4. DNS (usually UDP, but check payload for Transaction ID + Flags)
+		// Simple heuristic: UDP + Port 53 is usually enough, but let's check if it's not already set
+		if stream.ServerPort == 53 || stream.ClientPort == 53 {
+			stream.Protocol = "DNS"
+			return
+		}
+	}
 }
 
 func (e *Engine) detectLowMSS(stream *domain.Stream) {

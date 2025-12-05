@@ -29,8 +29,8 @@
 - [x] **Network Topology**: Use **React Flow** to visualize connections between IPs.
 - [x] **Packet Drill-down**: Use **react-hex-editor** (or custom) to display raw packet payloads.
 - [x] **Timeline View**: Implement a "Ladder Diagram" using **Recharts**.
-- [ ] **Advanced Protocol Detection**: Integrate **go-dpi** for deep packet inspection.
-- [ ] **Reporting**: Export to PDF/JSON.
+- [x] **Advanced Protocol Detection**: Integrate **go-dpi** (or custom signatures) for deep packet inspection.
+- [x] **Reporting**: Export to PDF/JSON.
 
 ## Infrastructure & DevOps
 - [x] **Docker Setup**: Dockerfiles and Compose created (but currently using local dev due to environment issues).

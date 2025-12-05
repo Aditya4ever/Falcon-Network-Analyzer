@@ -5,6 +5,7 @@ import { StreamList } from './StreamList';
 import TopologyMap from './TopologyMap';
 import { PacketViewer } from './PacketViewer';
 import { LadderDiagram } from './LadderDiagram';
+import { ReportGenerator } from './ReportGenerator';
 
 interface DashboardProps {
     analysisId: string;
@@ -18,13 +19,11 @@ interface Stream {
     server_port: number;
     protocol: string;
     severity: 'normal' | 'warning' | 'critical';
-    stats: {
-        packet_count: number;
-        retransmission_count: number;
-        reset_count: number;
-        has_timeout: boolean;
-    };
-    analysis: string[];
+    packet_count: number;
+    retransmission_count: number;
+    reset_count: number;
+    has_timeout: boolean;
+    analysis_issues: string; // JSON string
 }
 
 interface AnalysisResult {
@@ -40,6 +39,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
     const [data, setData] = useState<AnalysisResult | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const dashboardRef = React.useRef<HTMLDivElement>(null);
 
     // Filter State
     const [filterSource, setFilterSource] = useState('');
@@ -53,6 +53,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
             try {
                 const res = await axios.get(`/api/analysis/${analysisId}`);
                 if (res.data.status === 'complete') {
+                    console.log("Analysis complete. Data received:", res.data);
                     setData(res.data);
                     setLoading(false);
                 } else {
@@ -69,7 +70,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
                 setLoading(false);
             }
         };
-        pollAnalysis();
+        if (analysisId) {
+            pollAnalysis();
+        }
     }, [analysisId]);
 
     if (loading) {
@@ -114,7 +117,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
     const warningCount = data.streams.filter(s => s.severity === 'warning').length;
 
     return (
-        <div className="max-w-6xl mx-auto p-6 space-y-8">
+        <div ref={dashboardRef} className="max-w-6xl mx-auto p-6 space-y-8">
+            <div className="flex justify-end mb-4">
+                <ReportGenerator analysisId={analysisId} targetRef={dashboardRef} />
+            </div>
+
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card
@@ -181,7 +188,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
                 </div>
                 <StreamList
                     streams={displayStreams}
-                    onInspectStream={setViewingStreamId}
+                    onInspectStream={(id) => {
+                        console.log("Dashboard: inspecting stream", id);
+                        setViewingStreamId(id);
+                    }}
                     onViewLadder={setLadderStream}
                 />
             </div>
@@ -190,7 +200,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
             {viewingStreamId && (
                 <PacketViewer
                     streamId={viewingStreamId}
-                    onClose={() => setViewingStreamId(null)}
+                    stream={data?.streams.find(s => s.id === viewingStreamId)}
+                    onClose={() => {
+                        console.log("Closing PacketViewer");
+                        setViewingStreamId(null);
+                    }}
                 />
             )}
 
