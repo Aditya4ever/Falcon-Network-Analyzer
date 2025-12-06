@@ -38,8 +38,10 @@ interface AnalysisResult {
 export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => {
     const [data, setData] = useState<AnalysisResult | null>(null);
     const [loading, setLoading] = useState(true);
+    const [progress, setProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const dashboardRef = React.useRef<HTMLDivElement>(null);
+    const retryCount = React.useRef(0);
 
     // Filter State
     const [filterSource, setFilterSource] = useState('');
@@ -48,38 +50,74 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
     const [viewingStreamId, setViewingStreamId] = useState<string | null>(null);
     const [ladderStream, setLadderStream] = useState<Stream | null>(null);
 
+    // Debounce custom hook or just useEffect
     useEffect(() => {
-        const pollAnalysis = async () => {
-            try {
-                const res = await axios.get(`/api/analysis/${analysisId}`);
-                if (res.data.status === 'complete') {
-                    console.log("Analysis complete. Data received:", res.data);
-                    setData(res.data);
-                    setLoading(false);
-                } else {
-                    // Poll again in 1s
+        const timer = setTimeout(() => {
+            if (analysisId) {
+                pollAnalysis();
+            }
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [analysisId, filterSource, filterDest, filterProtocol]);
+
+    const pollAnalysis = async () => {
+        try {
+            const params = new URLSearchParams();
+            if (filterSource) params.append('src_ip', filterSource);
+            if (filterDest) params.append('dst_ip', filterDest);
+            if (filterProtocol) params.append('protocol', filterProtocol);
+
+            const res = await axios.get(`/api/analysis/${analysisId}?${params.toString()}`);
+            if (res.data.status === 'complete') {
+                console.log("Analysis complete. Data received:", res.data);
+                setData(res.data);
+                setLoading(false);
+            } else if (res.data.status === 'failed') {
+                setError(res.data.error || "Analysis failed");
+                setLoading(false);
+            } else {
+                // Still processing
+                if (res.data.progress) setProgress(res.data.progress);
+
+                // Poll again in 1s if still processing
+                if (!filterSource && !filterDest && !filterProtocol) {
                     setTimeout(pollAnalysis, 1000);
                 }
-            } catch (err: any) {
-                console.error(err);
-                // If 404, it means analysis is gone. If Network Error, backend might be down.
-                const msg = err.response?.status === 404
-                    ? "Analysis not found (Backend might have restarted)"
-                    : (err.message || "Failed to load analysis");
-                setError(msg);
-                setLoading(false);
             }
-        };
-        if (analysisId) {
-            pollAnalysis();
-        }
-    }, [analysisId]);
+        } catch (err: any) {
+            console.error(err);
+            const status = err.response?.status;
 
-    if (loading) {
+            if (status === 404) {
+                // Retry 404s for up to 5 seconds (backend propagation)
+                if (retryCount.current < 5) {
+                    retryCount.current++;
+                    console.log(`Analysis not found (404), retrying ${retryCount.current}/5...`);
+                    setTimeout(pollAnalysis, 1000);
+                    return;
+                }
+                setError("Analysis not found. The backend may have restarted or the ID is invalid.");
+            } else {
+                setError(err.message || "Failed to load analysis");
+            }
+            setLoading(false);
+        }
+    };
+
+    if (loading && !data) {
         return (
             <div className="flex flex-col items-center justify-center h-64">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4" />
-                <p className="text-slate-400">Analyzing network traffic...</p>
+                <p className="text-slate-400 mb-2">Analyzing network traffic...</p>
+                {progress > 0 && (
+                    <div className="w-64 h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-blue-500 transition-all duration-500 ease-out"
+                            style={{ width: `${progress}%` }}
+                        />
+                    </div>
+                )}
+                {progress > 0 && <p className="text-slate-500 text-xs mt-1">{progress}% Complete</p>}
             </div>
         );
     }
@@ -100,18 +138,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
 
     if (!data) return <div>Loading...</div>;
 
-    // Filtering Logic
-    const filteredStreams = (data.streams || []).filter(stream => {
-        const matchSource = stream.client_ip.includes(filterSource);
-        const matchDest = stream.server_ip.includes(filterDest);
-        const matchProto = stream.protocol.toLowerCase().includes(filterProtocol.toLowerCase());
-        return matchSource && matchDest && matchProto;
-    });
-
-    // Limit to 50 unless searching
-    const displayStreams = (filterSource || filterDest || filterProtocol)
-        ? filteredStreams
-        : filteredStreams.slice(0, 50);
+    // Use filtered streams from backend
+    const streams = data.streams || [];
 
     const criticalCount = data.streams.filter(s => s.severity === 'critical').length;
     const warningCount = data.streams.filter(s => s.severity === 'warning').length;
@@ -143,13 +171,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
             </div>
 
             {/* Topology Map */}
-            {filteredStreams.length > 0 && (
+            {streams.length > 0 && (
                 <div className="mb-8">
                     <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
                         <Network className="w-5 h-5 text-purple-400" />
                         Network Topology
                     </h2>
-                    <TopologyMap streams={filteredStreams} onInspectStream={setViewingStreamId} />
+                    <TopologyMap streams={streams} onInspectStream={setViewingStreamId} />
                 </div>
             )}
 
@@ -183,11 +211,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
                 <div className="flex justify-between items-center">
                     <h2 className="text-xl font-semibold text-slate-100">Traffic Streams</h2>
                     <span className="text-sm text-slate-400">
-                        Showing {displayStreams.length} of {filteredStreams.length} streams
+                        Showing {streams.length} of {data.summary.total_streams} streams
                     </span>
                 </div>
                 <StreamList
-                    streams={displayStreams}
+                    streams={streams}
                     onInspectStream={(id) => {
                         console.log("Dashboard: inspecting stream", id);
                         setViewingStreamId(id);

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"pcap-analyzer/internal/db"
 	"pcap-analyzer/internal/model"
@@ -51,24 +52,38 @@ func UploadHandler(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":      id,
-		"status":  "processing",
-		"message": "File uploaded successfully",
+		"id":     id,
+		"status": "processing",
 	})
 }
 
 func AnalysisResultHandler(c *gin.Context) {
 	id := c.Param("id")
-	var analysis model.Analysis
 
-	// Fetch from DB with Streams
-	if err := db.DB.Preload("Streams").First(&analysis, "id = ?", id).Error; err != nil {
-		println("AnalysisResultHandler Error:", err.Error()) // Log the actual error
-		c.JSON(http.StatusNotFound, gin.H{"error": "Analysis not found", "details": err.Error()})
+	// Parse query params for filtering
+	srcIP := c.Query("src_ip")
+	dstIP := c.Query("dst_ip")
+	protocol := c.Query("protocol")
+
+	var analysis model.Analysis
+	query := db.DB.Preload("Streams").Where("id = ?", id)
+
+	if err := query.Preload("Streams", func(db *gorm.DB) *gorm.DB {
+		filtered := db
+		if srcIP != "" {
+			filtered = filtered.Where("client_ip LIKE ?", "%"+srcIP+"%")
+		}
+		if dstIP != "" {
+			filtered = filtered.Where("server_ip LIKE ?", "%"+dstIP+"%")
+		}
+		if protocol != "" {
+			filtered = filtered.Where("protocol LIKE ?", "%"+protocol+"%")
+		}
+		return filtered.Order("start_time asc")
+	}).First(&analysis).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Analysis not found: " + err.Error()})
 		return
 	}
-
-	// DEBUG LOG
 
 	// Parse Summary JSON for response
 	var summaryMap map[string]interface{}
@@ -102,8 +117,39 @@ func GetStreamPacketsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, packets)
 }
 
+type IngestRequest struct {
+	FilePath string `json:"file_path"`
+}
+
+func DevIngestHandler(c *gin.Context) {
+	var req IngestRequest
+	if err := c.BindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	id := uuid.New().String()
+
+	// Create analysis record
+	analysis := model.Analysis{
+		ID:        id,
+		Status:    "processing",
+		CreatedAt: time.Now(),
+	}
+	if err := db.DB.Create(&analysis).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create record"})
+		return
+	}
+
+	go runAnalysis(id, req.FilePath)
+
+	c.JSON(http.StatusOK, gin.H{"id": id, "status": "processing"})
+}
+
 func runAnalysis(id, filePath string) {
 	// 1. Parse
+	db.DB.Model(&model.Analysis{}).Where("id = ?", id).Update("progress", 10)
+
 	parser := pcap.NewStreamingParser(filePath)
 	packetChan, err := parser.Parse()
 	if err != nil {
@@ -115,12 +161,14 @@ func runAnalysis(id, filePath string) {
 	}
 
 	// 2. Build
+	db.DB.Model(&model.Analysis{}).Where("id = ?", id).Update("progress", 30)
 	builder := analyzer.NewStreamBuilder()
 	for pkt := range packetChan {
 		builder.ProcessPacket(pkt)
 	}
 
 	// 3. Analyze
+	db.DB.Model(&model.Analysis{}).Where("id = ?", id).Update("progress", 60)
 	engine := analyzer.NewEngine()
 	domainStreams := builder.GetStreams()
 
@@ -204,7 +252,8 @@ func runAnalysis(id, filePath string) {
 	summaryJSON, _ := json.Marshal(summary)
 
 	db.DB.Model(&model.Analysis{}).Where("id = ?", id).Updates(model.Analysis{
-		Status:  "complete",
-		Summary: string(summaryJSON),
+		Status:   "complete",
+		Progress: 100,
+		Summary:  string(summaryJSON),
 	})
 }

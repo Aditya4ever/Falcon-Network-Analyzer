@@ -3,7 +3,10 @@ import { FileUpload } from './components/FileUpload';
 import { Dashboard } from './components/Dashboard';
 
 function App() {
-    const [analysisId, setAnalysisId] = useState<string | null>(null);
+    const [analysisId, setAnalysisId] = useState<string | null>(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('analysisId');
+    });
 
     return (
         <div className="min-h-screen bg-slate-900 text-slate-100">

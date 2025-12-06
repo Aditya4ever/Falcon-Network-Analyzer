@@ -6,7 +6,8 @@ import (
 
 type Analysis struct {
 	ID        string    `gorm:"primaryKey" json:"id"`
-	Status    string    `json:"status"` // "processing", "complete", "failed"
+	Status    string    `json:"status"`   // "processing", "complete", "failed"
+	Progress  int       `json:"progress"` // 0-100
 	CreatedAt time.Time `json:"created_at"`
 	Summary   string    `json:"summary"` // JSON string of summary stats
 	Error     string    `json:"error,omitempty"`

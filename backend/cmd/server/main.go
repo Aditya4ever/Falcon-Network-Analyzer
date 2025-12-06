@@ -27,9 +27,13 @@ func main() {
 	})
 
 	// API Routes
-	r.POST("/api/upload", handler.UploadHandler)
-	r.GET("/api/analysis/:id", handler.AnalysisResultHandler)
-	r.GET("/api/stream/:id/packets", handler.GetStreamPacketsHandler)
+	api := r.Group("/api")
+	{
+		api.POST("/upload", handler.UploadHandler)
+		api.GET("/analysis/:id", handler.AnalysisResultHandler)
+		api.GET("/stream/:id/packets", handler.GetStreamPacketsHandler)
+		api.POST("/dev/ingest", handler.DevIngestHandler)
+	}
 
 	fmt.Println("Server starting on :8080...")
 	if err := r.Run(":8080"); err != nil {
