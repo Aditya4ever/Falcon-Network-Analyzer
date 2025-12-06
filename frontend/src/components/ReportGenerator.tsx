@@ -1,71 +1,128 @@
 import React, { useState } from 'react';
-import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { FileDown, Loader2 } from 'lucide-react';
 
 interface ReportGeneratorProps {
     analysisId: string;
     targetRef: React.RefObject<HTMLDivElement>;
+    data?: any; // We'll pass the analysis data directly
 }
 
-export const ReportGenerator: React.FC<ReportGeneratorProps> = ({ analysisId, targetRef }) => {
+export const ReportGenerator: React.FC<ReportGeneratorProps> = ({ analysisId, data }) => {
     const [generating, setGenerating] = useState(false);
 
     const generateReport = async () => {
-        if (!targetRef.current) return;
         setGenerating(true);
 
         try {
-            // Capture the dashboard
-            const canvas = await html2canvas(targetRef.current, {
-                scale: 2, // Higher quality
-                backgroundColor: '#0f172a', // Match slate-900
-                logging: false,
-                useCORS: true
-            });
+            const doc = new jsPDF();
+            const pageWidth = doc.internal.pageSize.getWidth();
 
-            const imgData = canvas.toDataURL('image/png');
+            // --- Title Page ---
+            doc.setFontSize(22);
+            doc.setTextColor(40, 40, 40);
+            doc.text("Expertise Network Analysis Report", 14, 20);
 
-            // Calculate PDF dimensions (A4)
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Analysis ID: ${analysisId}`, 14, 28);
+            doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 33);
 
-            const imgWidth = pdfWidth;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            // --- Executive Summary ---
+            doc.setDrawColor(200, 200, 200);
+            doc.line(14, 38, pageWidth - 14, 38);
 
-            // Add Title
-            pdf.setFontSize(20);
-            pdf.setTextColor(40, 40, 40);
-            pdf.text(`Network Analysis Report: ${analysisId}`, 10, 15);
+            if (data && data.summary) {
+                doc.setFontSize(14);
+                doc.setTextColor(0, 0, 0);
+                doc.text("Executive Summary", 14, 48);
 
-            pdf.setFontSize(10);
-            pdf.setTextColor(100, 100, 100);
-            pdf.text(`Generated: ${new Date().toLocaleString()}`, 10, 22);
+                doc.setFontSize(10);
+                doc.setTextColor(60, 60, 60);
+                doc.text(`Total Streams Analyzed: ${data.summary.total_streams}`, 14, 56);
+                doc.text(`Issues Found: ${data.summary.issues_found}`, 14, 61);
 
-            // Add Image (splitting pages if needed, but for now simple fit)
-            // If height > page, we might need multi-page logic. 
-            // For MVP, let's just scale to fit or add as one big image if it fits.
+                // Add Status Badge-like text
+                const statusColor = data.status === 'complete' ? [0, 150, 0] : [200, 0, 0];
+                doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+                doc.text(`Status: ${data.status.toUpperCase()}`, 14, 66);
+            }
 
-            if (imgHeight < pdfHeight - 30) {
-                pdf.addImage(imgData, 'PNG', 0, 30, imgWidth, imgHeight);
-            } else {
-                // Multi-page logic (simplified)
-                let heightLeft = imgHeight;
-                let position = 30;
+            // --- Issues Table ---
+            if (data && data.streams) {
+                doc.setTextColor(0, 0, 0);
+                doc.setFontSize(14);
+                doc.text("Identified Issues & Anomalies", 14, 80);
 
-                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                heightLeft -= (pdfHeight - 30);
+                // Filter for streams with issues
+                const problematicStreams = data.streams.filter((s: any) => s.severity !== 'normal');
 
-                while (heightLeft >= 0) {
-                    position = heightLeft - imgHeight;
-                    pdf.addPage();
-                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                    heightLeft -= pdfHeight;
+                const tableData = problematicStreams.map((s: any) => [
+                    s.client_ip,
+                    s.server_ip,
+                    s.protocol,
+                    s.severity.toUpperCase(),
+                    `${s.packet_count} pkts`,
+                    // Format analysis issues from JSON string or object
+                    // Assuming analysis_issues is a JSON string based on our model
+                    (typeof s.analysis_issues === 'string'
+                        ? JSON.parse(s.analysis_issues || "[]").join(", ")
+                        : (s.analysis_issues || []).join(", ")
+                    ).substring(0, 50) + "..."
+                ]);
+
+                autoTable(doc, {
+                    startY: 85,
+                    head: [['Source', 'Dest', 'Proto', 'Severity', 'Size', 'Details']],
+                    body: tableData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [51, 65, 85] }, // Slate-700
+                    styles: { fontSize: 8 },
+                    columnStyles: {
+                        5: { cellWidth: 60 }
+                    }
+                });
+            }
+
+            // --- Critical Stream Details (Limit to top 5) ---
+            // Add a new page for detailed stream breakdown
+            if (data && data.streams) {
+                const criticalStreams = data.streams.filter((s: any) => s.severity === 'critical').slice(0, 5);
+
+                if (criticalStreams.length > 0) {
+                    doc.addPage();
+                    doc.setFontSize(14);
+                    doc.text("Critical Stream Details (Top 5)", 14, 20);
+
+                    let yPos = 30;
+                    criticalStreams.forEach((s: any, index: number) => {
+                        doc.setFontSize(11);
+                        doc.setTextColor(0, 0, 0);
+                        doc.text(`Stream #${index + 1}: ${s.client_ip} -> ${s.server_ip} (${s.protocol})`, 14, yPos);
+
+                        // Stream Stats
+                        doc.setFontSize(9);
+                        doc.setTextColor(80, 80, 80);
+                        const issues = typeof s.analysis_issues === 'string'
+                            ? JSON.parse(s.analysis_issues || "[]").join(", ")
+                            : (s.analysis_issues || []).join(", ");
+
+                        doc.text([
+                            `• Severity: ${s.severity.toUpperCase()}`,
+                            `• Issues: ${issues}`,
+                            `• Retransmits: ${s.retransmission_count}`,
+                            `• Timeouts: ${s.has_timeout ? 'Yes' : 'No'}`
+                        ], 20, yPos + 6);
+
+                        yPos += 35;
+                    });
                 }
             }
 
-            pdf.save(`falcon-report-${analysisId}.pdf`);
+            doc.save(`falcon-report-${analysisId}.pdf`);
+            console.log("Report generated successfully");
+
         } catch (err) {
             console.error("Report generation failed", err);
             alert("Failed to generate report");

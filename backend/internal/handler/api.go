@@ -172,7 +172,8 @@ func runAnalysis(id, filePath string) {
 	engine := analyzer.NewEngine()
 	domainStreams := builder.GetStreams()
 
-	var modelStreams []model.Stream
+	var streamsToInsert []model.Stream
+	var packetsToInsert []model.Packet
 	issuesCount := 0
 
 	for _, ds := range domainStreams {
@@ -202,6 +203,9 @@ func runAnalysis(id, filePath string) {
 			StartTime:           ds.Stats.StartTime.Sub(time.Time{}).Seconds(), // Simplified timestamp
 			EndTime:             ds.Stats.EndTime.Sub(time.Time{}).Seconds(),
 		}
+		
+		// Note: We do NOT attach packets to 'ms' here to avoid GORM nested insert slowness.
+		streamsToInsert = append(streamsToInsert, ms)
 
 		// Convert Domain Packets to Model Packets
 		for _, pkt := range ds.Packets {
@@ -226,27 +230,37 @@ func runAnalysis(id, filePath string) {
 				WindowSize: int(pkt.Window),
 				Payload:    pkt.Payload,
 			}
-			ms.Packets = append(ms.Packets, mp)
+			packetsToInsert = append(packetsToInsert, mp)
 		}
-
-		modelStreams = append(modelStreams, ms)
 	}
 
 	// Batch Insert Streams
-	if len(modelStreams) > 0 {
-		if err := db.DB.CreateInBatches(modelStreams, 100).Error; err != nil {
-			// If insert fails, mark analysis as failed
+	if len(streamsToInsert) > 0 {
+		// Insert Streams (Batch 100)
+		if err := db.DB.Omit("Packets").CreateInBatches(streamsToInsert, 100).Error; err != nil {
 			db.DB.Model(&model.Analysis{}).Where("id = ?", id).Updates(model.Analysis{
 				Status: "failed",
 				Error:  "Failed to save streams: " + err.Error(),
 			})
 			return
 		}
+		
+		// Insert Packets (Batch 500)
+		// We insert packets only after streams are successfully saved to enforce foreign key constraints if any (SQLite usually lax but good practice)
+		if len(packetsToInsert) > 0 {
+			if err := db.DB.CreateInBatches(packetsToInsert, 500).Error; err != nil {
+				db.DB.Model(&model.Analysis{}).Where("id = ?", id).Updates(model.Analysis{
+					Status: "failed",
+					Error:  "Failed to save packets: " + err.Error(),
+				})
+				return
+			}
+		}
 	}
 
 	// Update Analysis Status
 	summary := gin.H{
-		"total_streams": len(modelStreams),
+		"total_streams": len(streamsToInsert),
 		"issues_found":  issuesCount,
 	}
 	summaryJSON, _ := json.Marshal(summary)

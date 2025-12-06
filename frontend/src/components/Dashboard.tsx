@@ -147,7 +147,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ analysisId, onReset }) => 
     return (
         <div ref={dashboardRef} className="max-w-6xl mx-auto p-6 space-y-8">
             <div className="flex justify-end mb-4">
-                <ReportGenerator analysisId={analysisId} targetRef={dashboardRef} />
+                <ReportGenerator analysisId={analysisId} targetRef={dashboardRef} data={data} />
             </div>
 
             {/* Summary Cards */}
